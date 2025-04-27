@@ -19,10 +19,33 @@ export default function DiaryLayout() {
   const [isLoading, setIsLoading] = useState(true)
   const [datesWithEntries, setDatesWithEntries] = useState<Date[]>([])
   const [envError, setEnvError] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
   const router = useRouter()
   const { toast } = useToast()
 
-  // Check for environment variables
+  // Create Supabase client with explicit options
+  const supabase = (() => {
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseKey) {
+        setEnvError(true)
+        return null
+      }
+
+      return createClientComponentClient({
+        supabaseUrl,
+        supabaseKey,
+      })
+    } catch (error) {
+      console.error("Error initializing Supabase client:", error)
+      setInitError(error instanceof Error ? error.message : "Unknown error initializing Supabase")
+      return null
+    }
+  })()
+
+  // Check for environment variables and fetch data
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       setEnvError(true)
@@ -32,26 +55,34 @@ export default function DiaryLayout() {
         description: "Supabase environment variables are missing",
         variant: "destructive",
       })
-    } else {
-      fetchEntryForDate(date)
-      fetchDatesWithEntries()
+      return
     }
-  }, [date])
 
-  // Only create the Supabase client if environment variables exist
-  const supabase = !envError ? createClientComponentClient() : null
+    if (initError) {
+      setIsLoading(false)
+      toast({
+        title: "Initialization Error",
+        description: initError,
+        variant: "destructive",
+      })
+      return
+    }
+
+    fetchEntryForDate(date)
+    fetchDatesWithEntries()
+  }, [date, initError])
 
   const fetchDatesWithEntries = async () => {
-    if (envError) return
+    if (envError || initError || !supabase) return
 
     try {
       const {
         data: { user },
-      } = await supabase!.auth.getUser()
+      } = await supabase.auth.getUser()
 
       if (!user) return
 
-      const { data, error } = await supabase!.from("diary_entries").select("date").eq("user_id", user.id)
+      const { data, error } = await supabase.from("diary_entries").select("date").eq("user_id", user.id)
 
       if (error) throw error
 
@@ -63,19 +94,19 @@ export default function DiaryLayout() {
   }
 
   const fetchEntryForDate = async (date: Date) => {
-    if (envError) return
+    if (envError || initError || !supabase) return
 
     setIsLoading(true)
     try {
       const {
         data: { user },
-      } = await supabase!.auth.getUser()
+      } = await supabase.auth.getUser()
 
       if (!user) return
 
       const formattedDate = format(date, "yyyy-MM-dd")
 
-      const { data, error } = await supabase!
+      const { data, error } = await supabase
         .from("diary_entries")
         .select("*")
         .eq("user_id", user.id)
@@ -100,12 +131,12 @@ export default function DiaryLayout() {
   }
 
   const handleSignOut = async () => {
-    if (envError) {
+    if (envError || initError || !supabase) {
       router.push("/login")
       return
     }
 
-    await supabase!.auth.signOut()
+    await supabase.auth.signOut()
     router.push("/login")
     router.refresh()
   }
@@ -115,10 +146,10 @@ export default function DiaryLayout() {
   }
 
   const handleSaveEntry = async (content: string) => {
-    if (envError) {
+    if (envError || initError || !supabase) {
       toast({
         title: "Configuration Error",
-        description: "Supabase environment variables are missing",
+        description: initError || "Supabase environment variables are missing",
         variant: "destructive",
       })
       return
@@ -127,7 +158,7 @@ export default function DiaryLayout() {
     try {
       const {
         data: { user },
-      } = await supabase!.auth.getUser()
+      } = await supabase.auth.getUser()
 
       if (!user) return
 
@@ -135,12 +166,12 @@ export default function DiaryLayout() {
 
       if (entry) {
         // Update existing entry
-        const { error } = await supabase!.from("diary_entries").update({ content }).eq("id", entry.id)
+        const { error } = await supabase.from("diary_entries").update({ content }).eq("id", entry.id)
 
         if (error) throw error
       } else {
         // Create new entry
-        const { error } = await supabase!.from("diary_entries").insert([
+        const { error } = await supabase.from("diary_entries").insert([
           {
             user_id: user.id,
             date: formattedDate,
@@ -169,7 +200,7 @@ export default function DiaryLayout() {
     }
   }
 
-  if (envError) {
+  if (envError || initError) {
     return (
       <div className="min-h-screen flex flex-col bg-black notebook">
         <header className="border-b bg-black diary-spine">
@@ -187,22 +218,36 @@ export default function DiaryLayout() {
             <div className="notebook-cover p-6 rounded-lg">
               <div className="notebook-page bg-white text-black rounded-md p-8 min-h-[600px] relative">
                 <div className="flex flex-col items-center justify-center h-full">
-                  <h2 className="text-xl font-semibold text-gray-800 mb-4">Environment Setup Required</h2>
+                  <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                    {initError ? "Initialization Error" : "Environment Setup Required"}
+                  </h2>
                   <div className="bg-gray-100 p-6 rounded-lg max-w-lg">
-                    <p className="mb-4">
-                      Please set up your Supabase environment variables in{" "}
-                      <code className="bg-gray-200 px-1 py-0.5 rounded">.env.local</code>:
-                    </p>
-                    <pre className="bg-gray-200 p-4 rounded-md overflow-x-auto mb-4 text-sm">
-                      <code>
-                        NEXT_PUBLIC_SUPABASE_URL=your_supabase_url{"\n"}
-                        NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-                      </code>
-                    </pre>
-                    <p className="text-sm text-gray-600">
-                      You can find these values in your Supabase project settings under{" "}
-                      <span className="font-semibold">Project Settings &gt; API</span>.
-                    </p>
+                    {initError ? (
+                      <>
+                        <p className="mb-4 font-medium text-red-600">Error initializing Supabase client:</p>
+                        <pre className="bg-gray-200 p-4 rounded-md overflow-x-auto mb-4 text-sm">{initError}</pre>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mb-4">Please set up your Supabase environment variables in Netlify:</p>
+                        <pre className="bg-gray-200 p-4 rounded-md overflow-x-auto mb-4 text-sm">
+                          <code>
+                            NEXT_PUBLIC_SUPABASE_URL=your_supabase_url{"\n"}
+                            NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+                          </code>
+                        </pre>
+                        <p className="text-sm text-gray-600">
+                          You can find these values in your Supabase project settings under{" "}
+                          <span className="font-semibold">Project Settings &gt; API</span>.
+                        </p>
+                      </>
+                    )}
+                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Note:</strong> After adding environment variables in Netlify, you need to trigger a new
+                        deployment.
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="page-curl"></div>
