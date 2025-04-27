@@ -18,6 +18,7 @@ export default function Login() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [envError, setEnvError] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
   const router = useRouter()
   const { toast } = useToast()
 
@@ -28,16 +29,37 @@ export default function Login() {
     }
   }, [])
 
-  // Only create the Supabase client if environment variables exist
-  const supabase = !envError ? createClientComponentClient() : null
+  // Create Supabase client with explicit options
+  const supabase = (() => {
+    try {
+      if (envError) return null
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseKey) {
+        setEnvError(true)
+        return null
+      }
+
+      return createClientComponentClient({
+        supabaseUrl,
+        supabaseKey,
+      })
+    } catch (error) {
+      console.error("Error initializing Supabase client:", error)
+      setInitError(error instanceof Error ? error.message : "Unknown error initializing Supabase")
+      return null
+    }
+  })()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (envError) {
+    if (envError || initError) {
       toast({
         title: "Configuration Error",
-        description: "Supabase environment variables are missing",
+        description: initError || "Supabase environment variables are missing",
         variant: "destructive",
       })
       return
@@ -68,7 +90,7 @@ export default function Login() {
     }
   }
 
-  if (envError) {
+  if (envError || initError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black notebook">
         <div className="w-full max-w-md p-8 notebook-cover rounded-lg">
@@ -82,20 +104,30 @@ export default function Login() {
             <CardHeader>
               <CardTitle className="text-center">Environment Setup Required</CardTitle>
               <CardDescription className="text-center">
-                Please set up your Supabase environment variables
+                {initError ? "Error initializing Supabase" : "Please set up your Supabase environment variables"}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <p>
-                  Add the following to your <code className="bg-muted px-1 py-0.5 rounded">.env.local</code> file:
-                </p>
-                <pre className="bg-muted p-4 rounded-md overflow-x-auto text-xs">
-                  <code>
-                    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url{"\n"}
-                    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-                  </code>
-                </pre>
+                {initError ? (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
+                    <p className="font-medium">Error:</p>
+                    <p className="text-sm">{initError}</p>
+                  </div>
+                ) : (
+                  <>
+                    <p>Add the following to your Netlify environment variables:</p>
+                    <pre className="bg-muted p-4 rounded-md overflow-x-auto text-xs">
+                      <code>
+                        NEXT_PUBLIC_SUPABASE_URL=your_supabase_url{"\n"}
+                        NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+                      </code>
+                    </pre>
+                    <p className="text-sm text-muted-foreground">
+                      After adding environment variables, redeploy your application.
+                    </p>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
