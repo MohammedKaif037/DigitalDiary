@@ -6,6 +6,10 @@ import { BookOpen } from "lucide-react"
 
 export default async function Home() {
   try {
+    // Log environment variable presence (not values) for debugging
+    console.log("NEXT_PUBLIC_SUPABASE_URL exists:", !!process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log("NEXT_PUBLIC_SUPABASE_ANON_KEY exists:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
     // Check if environment variables exist
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       return (
@@ -18,10 +22,7 @@ export default async function Home() {
             </div>
             <div className="bg-white text-black rounded-md p-8">
               <h1 className="text-2xl font-bold mb-4 text-center">Environment Setup Required</h1>
-              <p className="mb-4">
-                Please set up your Supabase environment variables in{" "}
-                <code className="bg-gray-100 px-1 py-0.5 rounded">.env.local</code>:
-              </p>
+              <p className="mb-4">Please set up your Supabase environment variables in Netlify:</p>
               <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto mb-4">
                 <code>
                   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url{"\n"}
@@ -38,7 +39,16 @@ export default async function Home() {
       )
     }
 
-    const supabase = createServerComponentClient({ cookies })
+    // Create Supabase client with explicit options
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    const supabase = createServerComponentClient({
+      cookies,
+      supabaseUrl,
+      supabaseKey,
+    })
+
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -50,12 +60,23 @@ export default async function Home() {
     return <DiaryLayout />
   } catch (error) {
     console.error("Error in Home component:", error)
+
+    // More detailed error message
     return (
       <div className="min-h-screen flex items-center justify-center bg-black notebook p-4">
         <div className="w-full max-w-md p-8 notebook-cover rounded-lg">
           <div className="bg-white text-black rounded-md p-8">
             <h1 className="text-2xl font-bold mb-4 text-center">Error</h1>
-            <p>There was an error initializing the application. Please check your environment setup.</p>
+            <p className="mb-4">There was an error initializing the application.</p>
+            <div className="bg-gray-100 p-4 rounded-md">
+              <p className="font-medium">Troubleshooting steps:</p>
+              <ol className="list-decimal pl-5 mt-2 space-y-1">
+                <li>Verify your Supabase URL and anon key are correct</li>
+                <li>Check that environment variables are properly set in Netlify</li>
+                <li>Make sure to rebuild and redeploy after setting environment variables</li>
+                <li>Ensure your Supabase project is active and running</li>
+              </ol>
+            </div>
           </div>
         </div>
       </div>
